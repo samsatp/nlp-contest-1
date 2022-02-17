@@ -1,0 +1,6 @@
+*.csv
+*docx
+.ipynb_checkpoints/
+my_models/__pycache__
+init_proj.ipynb
+venv
