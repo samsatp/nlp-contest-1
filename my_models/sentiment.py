@@ -1,13 +1,17 @@
 import numpy as np
 from typing import List
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.linear_model import LogisticRegression
-from my_models import my_models
+from my_models import Non_pretrained, my_models
+from my_models.utils import load_embeddings
 import tensorflow as tf
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from sklearn import preprocessing
 import re
+import pandas as pd
+import tensorflow_text as tf_text
+from tensorflow.keras.layers import TextVectorization
 ## Rule Based
 def VADER(X_train, **hyperparams):
     diff = hyperparams.get("diff", 0.1)
@@ -39,19 +43,23 @@ def VADER(X_train, **hyperparams):
     
     return y_pred
 
-
-class LOGREG(my_models):
-    def __init__(self,**kwargs):
+class LOGREG:
+    def __init__(self, feature_mode: str, **kwargs):
         self.model = LogisticRegression(random_state=0, **kwargs)
         self.vectorizer = None
+        self.feature_mode = feature_mode
 
     def preprocess(self, corpus: List[str]) -> List[float]:
         if self.vectorizer is None:
-            print("Creating new vectorizer...")
-            self.vectorizer = TfidfVectorizer()
+            print(f"Creating new {self.feature_mode} vectorizer...")
+            if self.feature_mode == "TFIDF":
+                self.vectorizer = TfidfVectorizer()
+            elif self.feature_mode == "BOW":
+                self.vectorizer = CountVectorizer()
+
             X = self.vectorizer.fit_transform(corpus)
 
-            print(f'TF-IDF matrix: {X.shape}')
+            print(f'{self.feature_mode} matrix: {X.shape}')
             return X
         else:
             return self.vectorizer.transform(corpus)
@@ -63,75 +71,37 @@ class LOGREG(my_models):
         y_pred = self.model.predict(X).ravel()
         return y_pred
 
+class dl(Non_pretrained):
+    def __init__(self, compile_info, is_bow=False, le=None):
+        super().__init__(is_bow, le)
+        self.compile_info = compile_info
 
-
-class RNN:
-    def __init__(self, compiled_model):
-        self.model = compiled_model
-        self.tokenizer = None
-        self.le = None
-        self.vocab_size = None
-        self.maxlen = None
+    def instantiate_model_by_template(self):
+        self.model = self.template_model
+        self.model.compile(**self.compile_info)
         
-    def __tokenize(self, corpus: List[str], vocab_size: int, **kwargs):
-        if self.tokenizer is None:
-            self.vocab_size = vocab_size
-            self.tokenizer = Tokenizer(num_words=vocab_size, oov_token='<UNK>', **kwargs)
-            self.tokenizer.fit_on_texts(corpus)
-            print("...Build new Tokenizer")
-        
-        return self.tokenizer.texts_to_sequences(corpus)
-        
-    def __padding(self, X, maxlen):
-        self.maxlen = maxlen
-        return pad_sequences(
-            X, maxlen=maxlen, dtype='int32', padding='post', truncating='pre', value=0.0
-        )
-    
-    def __label_encode(self, label: List[str]):
-        if self.le is None:
-            self.le = preprocessing.LabelEncoder()
-            self.le.fit(label)
-            print("...Build new LabelEncoder")
-        return self.le.transform(label)
-    
-    def preprocess(self, X: List[str], Y: List[str]=None, vocab_size:int=None, maxlen:int=None, **kwargs):
-        X = self.__tokenize(X, vocab_size, **kwargs)
-        X = self.__padding(X, maxlen)
-        
+    def preprocess(self, X, Y=None, maxtokens=None, maxlen=None, **tokenization_kws):
+        X = super().tokenize(X, maxtokens, maxlen, **tokenization_kws)
         if Y is not None:
-            Y = self.__label_encode(Y)
+            Y = super().label_encode(Y)
             return X, Y
-        else:
-            return X
-    
-    def fit(
-        self,  # preprocessed datasets*
-        X_train, Y_train, 
-        X_dev, Y_dev, 
-        batch_size, epochs
-    ):
+        return X
+
+    def fit(self, X_train, Y_train, X_dev, Y_dev, batch_size, epochs):
         history = self.model.fit(
             x=X_train, y=Y_train,
             batch_size=batch_size, epochs=epochs,
             validation_data=(X_dev,Y_dev)
         )
         return history
-        
-    def predict(self, X):  # preprocessed datasets*
+
+    def predict(self, X):
         y_pred = self.model.predict(X)
         y_pred = y_pred.argmax(axis=-1).ravel()
         return y_pred
-        
 
-    @staticmethod
-    def total_vocabSize(corpus: List[str]):
-        vocab = []
-        for row in corpus:
-            words = re.sub(r'[^a-zA-Z\s]', '',row)
-            words = row.split()
-            for word in words:
-                if word not in vocab:
-                    vocab.append(word.lower().strip())
-        return len(vocab)
-    
+class dl_pretrained(dl):
+    def __init__(self, vocab, compile_info, **tokenization_kws):
+        super().__init__(compile_info, is_bow=False, le=None)
+        self.tokenizer = TextVectorization(vocabulary=vocab, **tokenization_kws)
+        

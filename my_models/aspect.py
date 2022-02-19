@@ -1,4 +1,6 @@
-from my_models import my_models
+from sklearn.metrics import rand_score
+from my_models import Non_pretrained, Pretrained, my_models
+from my_models.utils import load_embeddings
 import numpy as np
 from typing import List
 import tensorflow as tf
@@ -6,88 +8,17 @@ from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+import tensorflow as tf
+import tensorflow_text as tf_text
+from tensorflow.keras.layers import TextVectorization
 
-class MulBinary_rnn(my_models):
-    def __init__(self, uncompiled_template_model, **kwargs):
-        self.template_models = uncompiled_template_model
-        self.tokenizer = None
-        self.models = None
-        
-        default_compile_info = dict(optimizer='adam', loss='binary_crossentropy', metrics='accuracy')
-        self.compile_info = kwargs.get('compile_info', default_compile_info)
-        
-    def fit(
-        self,  # preprocessed datasets*
-        X_train: List[List[int]], 
-        Y_train: pd.DataFrame, 
-        X_dev, Y_dev, 
-        batch_size, epochs
-    ):
-        histories = []
-        for i, target in enumerate(self.classes):
-            print(f'fitting {target} ...\n')
-            y = Y_train[target]
-            y_dev = Y_dev[target]
-            
-            history = self.models[i].fit(
-                            x=X_train, y=y,
-                            batch_size=batch_size, epochs=epochs,
-                            validation_data=(X_dev,y_dev)
-                        )
-            histories.append(history)
-        return histories
-            
-    def predict(self, X, threshold=0.5):  # preprocessed datasets*
-        outputs = []
-        threshold = 0.5
-        for aspect, model in zip(self.classes, self.models):
-            print(f'predicting {aspect}...')
-            y_pred_target = model.predict(X)
-            y_pred = tf.cast(y_pred_target > threshold, tf.int32) 
-            outputs.append(y_pred.numpy().ravel())
-            
-        outputs = np.transpose(np.array(outputs))
-        return outputs
-        
-        
-    def _tokenize(self, corpus: List[str], vocab_size: int, **kwargs):
-        if self.tokenizer is None:
-            self.vocab_size = vocab_size
-            self.tokenizer = Tokenizer(num_words=vocab_size, oov_token='<UNK>', **kwargs)
-            self.tokenizer.fit_on_texts(corpus)
-            print("...Build new Tokenizer")
-        
-        return self.tokenizer.texts_to_sequences(corpus)
-        
-    def _padding(self, X, maxlen):
-        self.maxlen = maxlen
-        return pad_sequences(
-            X, maxlen=maxlen, dtype='int32', padding='post', truncating='pre', value=0.0
-        )
-    
-    def preprocess(self, X: pd.Index, Y: pd.DataFrame=None, vocab_size:int=None, maxlen:int=None, **kwargs):
-        X = self._tokenize(X, vocab_size, **kwargs)
-        X = self._padding(X, maxlen)
-        if Y is None:
-            return X
-        self.classes = Y.columns
-        
-        if self.models is None:
-            print("cloning model from template...")
-            self.models = []
-            for _ in range(len(self.classes)):
-                cloned = tf.keras.models.clone_model(self.template_models)
-                cloned.compile(**self.compile_info)
-                self.models.append(cloned)
-        
-        return X, Y
-
-class MulBinary_logreg(my_models):
-    def __init__(self, **kwargs):
+class LOGREG:
+    def __init__(self, feature_mode, **kwargs):
         self.hyperparams = kwargs.get('hyperparams', dict(random_state=0))
         self.models = None
         self.vectorizer = None
+        self.feature_mode = feature_mode
 
     def preprocess(self, corpus, Y=None):
         if Y is not None:
@@ -101,10 +32,15 @@ class MulBinary_logreg(my_models):
                 ]
             
         if self.vectorizer is None:
-            print("Creating new vectorizer...")
-            self.vectorizer = TfidfVectorizer()
+            print(f"Creating new {self.feature_mode} vectorizer...")
+            if self.feature_mode == "TFIDF":
+                self.vectorizer = TfidfVectorizer()
+            elif self.feature_mode == "BOW":
+                self.vectorizer = CountVectorizer()
+
             X = self.vectorizer.fit_transform(corpus)
-            print(f'TF-IDF matrix: {X.shape}')
+
+            print(f'{self.feature_mode} matrix: {X.shape}')
             return X
         else:
             return self.vectorizer.transform(corpus)
@@ -125,3 +61,57 @@ class MulBinary_logreg(my_models):
             
         outputs = np.transpose(np.array(outputs))
         return outputs
+
+class dl(Non_pretrained):
+    def __init__(self, compile_info, n_models, is_bow=False, le=None):
+        super().__init__(is_bow, le)
+        self.compile_info = compile_info
+        self.n_models = n_models
+
+    def instantiate_model_by_template(self):
+        self.models = []
+        for _ in range(self.n_models):
+            cloned = tf.keras.models.clone_model(self.template_models)
+            cloned.compile(**self.compile_info)
+            self.models.append(cloned)
+
+    def preprocess(self, X, Y=None, maxtokens=None, maxlen=None, **tokenization_kws):
+        X = super().tokenize(X, **tokenization_kws)
+        if Y is  None:
+            return X
+        return X, Y
+
+    def fit(self, X_train, Y_train, X_dev, Y_dev, batch_size, epochs):
+        histories = []
+        self.classes = Y_train.columns
+        for i, target in enumerate(self.classes):
+            print(f'fitting {target} ...\n')
+            y = Y_train[target]
+            y_dev = Y_dev[target]
+            
+            history = self.models[i].fit(
+                            x=X_train, y=y,
+                            batch_size=batch_size, epochs=epochs,
+                            validation_data=(X_dev,y_dev)
+                        )
+            histories.append(history)
+        return histories
+
+    def predict(self, X):
+        outputs = []
+        threshold = 0.5
+        for aspect, model in zip(self.classes, self.models):
+            print(f'predicting {aspect}...')
+            y_pred_target = model.predict(X)
+            y_pred = tf.cast(y_pred_target > threshold, tf.int32) 
+            outputs.append(y_pred.numpy().ravel())
+            
+        outputs = np.transpose(np.array(outputs))
+        return outputs
+
+
+class dl_pretrained(dl):
+    def __init__(self, vocab, compile_info, n_models, **tokenization_kws):
+        super().__init__(compile_info, n_models, is_bow=False, le=None)
+        self.tokenizer = TextVectorization(vocabulary=vocab, **tokenization_kws)
+
