@@ -14,8 +14,14 @@ class Non_pretrained(ABC):
         self.le = le
 
     def tokenize(self, corpus: List[str], maxtokens: int, maxlen:int, **kwargs):
-        output_mode = "count" if self.is_bow else "int"
-        if self.tokenizer is None:
+        if self.is_bow == False:
+            output_mode = 'int'
+        elif self.is_bow == True:
+            output_mode = 'count'
+        elif self.is_bow == 'tfidf':
+            output_mode = 'tf_idf'
+        
+        if not hasattr(self, 'tokenizer'):
             self.tokenizer = TextVectorization(max_tokens=maxtokens, output_sequence_length=maxlen, output_mode=output_mode, **kwargs)
             self.tokenizer.adapt(corpus)
             print("...Adapting new Tokenizer")

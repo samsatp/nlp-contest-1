@@ -2,10 +2,8 @@
 *docx
 .ipynb_checkpoints/
 my_models/__pycache__
-init_proj.ipynb
 venv
 resulting_predictions
 embeddings
-
-Untitled.ipynb
-test-tf-hub.ipynb
+__pycache__
+notebook_archives

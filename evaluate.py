@@ -155,6 +155,14 @@ class EvaluateModel():
 
         print(report_df, '\n')
 
+def reports(true_df, pred_df):
+    EVAL = EvaluateModel(true_df, pred_df)
+    EVAL.check_files()
+    EVAL.make_tuple_set()
+    EVAL.report_aspect()
+    EVAL.report_sentiment()
+    EVAL.report_overall()
+
 if __name__ == '__main__':
     args = sys.argv
     if len(args) != 3:

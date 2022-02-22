@@ -1,5 +1,5 @@
 import pandas as pd
-from tensorflow.keras.layers import Embedding, Bidirectional, GRU, Dense, Dropout, Conv1D, GlobalMaxPooling1D
+from tensorflow.keras.layers import Embedding, Bidirectional, GRU, Dense, Dropout, Conv1D, GlobalMaxPooling1D, BatchNormalization
 import tensorflow as tf
 
 class InferenceModel:
@@ -13,10 +13,13 @@ class InferenceModel:
         X_asp  = self.aspect_model.preprocess(X_raw.text, **kwargs)
 
         sent_pred = self.sentiment_model.predict(X_sent)
-        asp_pred  = self.aspect_model.predict(X_asp)
+        asp_pred, _  = self.aspect_model.predict(X_asp)
+
+    
+        assert all(asp_pred.columns == self.aspect_model.classes)
 
         output_aspects = []
-        for row in asp_pred:
+        for row in asp_pred.values:
             temp = []
             for i, p in enumerate(row):
                 if p > 0:
@@ -62,34 +65,39 @@ def BaseModel(embedding_matrix, embedding_trainable=False, vocab_size=None, emb_
         )
         return model
 
-def get_rnn(rnn_layers, dense_layers, embedding_matrix, n_outputs, embedding_trainable=False):
+def get_rnn(rnn_layers, dense_layers, embedding_matrix, n_outputs, embedding_trainable=False, **kwargs):
     
-    model = BaseModel(embedding_matrix, embedding_trainable)
+    model = BaseModel(embedding_matrix, embedding_trainable, **kwargs)
     
     for rnn_unit in rnn_layers[:-1]:
         model.add( Bidirectional(GRU(rnn_unit, dropout=0.5, return_sequences=True)) )
     model.add( Bidirectional(GRU(rnn_layers[-1], dropout=0.5, return_sequences=False)) )
-        
+
+    model.add(BatchNormalization())    
+    
     for dense_unit in dense_layers:
         model.add( Dense(dense_unit, activation='relu') )
+        model.add(Dropout(0.5))
     model.add( Dense(n_outputs, activation='softmax' if n_outputs > 1 else 'sigmoid') )  
         
     return model
 
-def get_cnn(n_filters, kernel_size, n_cnn_layers, dense_layers, embedding_matrix, n_outputs, embedding_trainable=False):
+def get_cnn(n_filters, kernel_size, n_cnn_layers, dense_layers, embedding_matrix, n_outputs, embedding_trainable=False, **kwargs):
     
-    model = BaseModel(embedding_matrix, embedding_trainable)
+    model = BaseModel(embedding_matrix, embedding_trainable, **kwargs)
 
     for _ in range(n_cnn_layers):
         model.add(Conv1D(n_filters,
                         kernel_size,
                         activation='relu')
                 )
+        model.add(Dropout(0.5))
     model.add(GlobalMaxPooling1D())
+    model.add(BatchNormalization()) 
     
     for dense_unit in dense_layers:
         model.add(Dense(dense_unit, activation='relu'))
-        model.add(Dropout(0.4))
+        model.add(Dropout(0.5))
     model.add(Dense(n_outputs, activation='softmax' if n_outputs > 1 else 'sigmoid'))
 
     return model

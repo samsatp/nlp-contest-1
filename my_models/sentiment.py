@@ -2,7 +2,7 @@ import numpy as np
 from typing import List
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.linear_model import LogisticRegression
-from my_models import Non_pretrained, my_models
+from my_models import Non_pretrained
 from my_models.utils import load_embeddings
 import tensorflow as tf
 from tensorflow.keras.preprocessing.text import Tokenizer
@@ -12,7 +12,7 @@ import re
 import pandas as pd
 import tensorflow_text as tf_text
 from tensorflow.keras.layers import TextVectorization
-## Rule Based
+
 def VADER(X_train, **hyperparams):
     diff = hyperparams.get("diff", 0.1)
     
@@ -43,9 +43,9 @@ def VADER(X_train, **hyperparams):
     
     return y_pred
 
-class LOGREG:
-    def __init__(self, feature_mode: str, **kwargs):
-        self.model = LogisticRegression(random_state=0, **kwargs)
+class ml:
+    def __init__(self, feature_mode: str, model, **kwargs):
+        self.model = model(**kwargs)
         self.vectorizer = None
         self.feature_mode = feature_mode
 
@@ -76,6 +76,9 @@ class dl(Non_pretrained):
         super().__init__(is_bow, le)
         self.compile_info = compile_info
 
+    def reset_compile_info(self, compile_info):
+            self.compile_info = compile_info
+            
     def instantiate_model_by_template(self):
         self.model = self.template_model
         self.model.compile(**self.compile_info)
