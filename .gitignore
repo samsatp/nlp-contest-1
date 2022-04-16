@@ -1,9 +1,9 @@
 *.csv
 *docx
 .ipynb_checkpoints/
-my_models/__pycache__
+**/__pycache__
 venv
 resulting_predictions
 embeddings
-__pycache__
 notebook_archives
+*.pdf
